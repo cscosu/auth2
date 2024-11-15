@@ -3,7 +3,8 @@ package main
 import (
 	"log"
 	"net/http"
-
+	"encoding/json"
+	"fmt"
 	_ "modernc.org/sqlite"
 )
 
@@ -99,11 +100,26 @@ func (r *Router) adminVote(w http.ResponseWriter, req *http.Request) {
 		candidateList = append(candidateList, candidate)
 	}
 
+	type Candidate struct {
+		name string `json:"name"`
+		votes int `json:"votes"`
+	}
+	var candidateListJson []Candidate 
+	for candidate := range candidates {
+		candidateListJson = append(candidateListJson, Candidate{name : candidate, votes : 0}) 
+
+	}
+
+	candidateListJsonString, _ := json.Marshal(candidateListJson)
+	fmt.Println(candidateListJsonString)
+
+
 	err = Templates.ExecuteTemplate(w, "admin-vote.html.tpl", map[string]interface{}{
 		"nameNum":        nameNum,
 		"path":           req.URL.Path,
 		"candidateTitle": candidateTitle,
 		"candidateList":  candidateList,
+		"candidateListJson": string(candidateListJsonString),
 	})
 	if err != nil {
 		log.Println("Failed to render template:", err)
