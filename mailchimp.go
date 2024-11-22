@@ -127,7 +127,7 @@ func emailToSubscriberHash(email string) string {
 func (r *Router) SetMailchimp(w http.ResponseWriter, req *http.Request) {
 	userId, _ := getUserIDFromContext(req.Context())
 
-	row := r.db.QueryRow("SELECT name_num FROM users WHERE idm_id = ?1", userId)
+	row := r.db.QueryRow("SELECT name_num FROM users WHERE buck_id = ?1", userId)
 	var nameNum string
 	err := row.Scan(&nameNum)
 	if err != nil {

@@ -65,7 +65,7 @@ func (r *Router) DiscordCallback(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Failed to get user", http.StatusForbidden)
 		return
 	}
-	row := tx.QueryRow("SELECT discord_id FROM users WHERE idm_id = ?", userId)
+	row := tx.QueryRow("SELECT discord_id FROM users WHERE buck_id = ?", userId)
 
 	var oldDiscordId sql.NullString
 	err = row.Scan(&oldDiscordId)
@@ -76,7 +76,7 @@ func (r *Router) DiscordCallback(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	_, err = tx.Exec("UPDATE users SET discord_id = ? WHERE idm_id = ?", discordUser.ID, userId)
+	_, err = tx.Exec("UPDATE users SET discord_id = ? WHERE buck_id = ?", discordUser.ID, userId)
 	if err != nil {
 		log.Println("Discord callback: failed to update user:", err)
 		http.Error(w, "Failed to update discord", http.StatusInternalServerError)

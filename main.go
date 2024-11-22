@@ -37,9 +37,9 @@ func (r *Router) signin(w http.ResponseWriter, req *http.Request) {
 	now := time.Now()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"idm_id": attributes.IDMUID,
-		"iat":    now.Unix(),
-		"exp":    now.AddDate(1, 0, 0).Unix(),
+		"buck_id": attributes.BuckID,
+		"iat":     now.Unix(),
+		"exp":     now.AddDate(1, 0, 0).Unix(),
 	})
 
 	signedTokenString, err := token.SignedString(r.jwtSecret)
@@ -80,17 +80,16 @@ func (r *Router) signin(w http.ResponseWriter, req *http.Request) {
 	// Upsert the user, updating their information if it already exists. Do not
 	// update last_attended_timestamp, otherwise it will be set to NULL
 	_, err = r.db.Exec(`
-		INSERT INTO users (idm_id, buck_id, name_num, display_name, student, alum, employee, faculty)
-		VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-		ON CONFLICT (idm_id) DO UPDATE SET
-			buck_id = buck_id,
+		INSERT INTO users (buck_id, name_num, display_name, student, alum, employee, faculty)
+		VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+		ON CONFLICT (buck_id) DO UPDATE SET
 			name_num = name_num,
 			display_name = display_name,
 			student = student,
 			alum = alum,
 			employee = employee,
 			faculty = faculty
-	`, attributes.IDMUID, attributes.BuckID, nameNum, attributes.DisplayName, student, alum, employee, faculty)
+	`, attributes.BuckID, nameNum, attributes.DisplayName, student, alum, employee, faculty)
 	if err != nil {
 		log.Println("Failed to upsert user:", err)
 		http.Error(w, "Failed to sign in. Contact an admin", http.StatusInternalServerError)
@@ -142,7 +141,7 @@ func (r *Router) index(w http.ResponseWriter, req *http.Request) {
 
 	if hasUserId {
 		row := r.db.QueryRow(`
-			UPDATE users SET last_seen_timestamp = strftime('%s', 'now') WHERE idm_id = ?1
+			UPDATE users SET last_seen_timestamp = strftime('%s', 'now') WHERE buck_id = ?1
 			RETURNING name_num, discord_id, added_to_mailinglist
 		`, userId)
 		var nameNum string
@@ -176,7 +175,7 @@ func (r *Router) index(w http.ResponseWriter, req *http.Request) {
 			}
 
 			if isOnMailingList {
-				_, err = r.db.Exec("UPDATE users SET added_to_mailinglist = 1 WHERE idm_id = ?", userId)
+				_, err = r.db.Exec("UPDATE users SET added_to_mailinglist = 1 WHERE buck_id = ?", userId)
 				if err != nil {
 					log.Println("Failed to update user mailing list status:", err)
 					http.Error(w, "Failed to update user mailing list status", http.StatusInternalServerError)
@@ -209,7 +208,7 @@ func (r *Router) index(w http.ResponseWriter, req *http.Request) {
 func (r *Router) attendance(w http.ResponseWriter, req *http.Request) {
 	userId, _ := getUserIDFromContext(req.Context())
 
-	row := r.db.QueryRow("SELECT name_num FROM users WHERE idm_id = ?", userId)
+	row := r.db.QueryRow("SELECT name_num FROM users WHERE buck_id = ?", userId)
 	var nameNum string
 	err := row.Scan(&nameNum)
 	if err != nil {
@@ -225,6 +224,8 @@ func (r *Router) attendance(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	ny, _ := time.LoadLocation("America/New_York")
+
 	var attendanceRecords []map[string]interface{}
 	for rows.Next() {
 		var timestamp int64
@@ -239,8 +240,6 @@ func (r *Router) attendance(w http.ResponseWriter, req *http.Request) {
 		if kind == int(AttendanceTypeOnline) {
 			attendanceType = "Online"
 		}
-
-		ny, _ := time.LoadLocation("America/New_York")
 
 		attendanceRecords = append(attendanceRecords, map[string]interface{}{
 			"timestamp": time.Unix(timestamp, 0).In(ny).Format("Mon Jan _2, 2006 at 15:04"),
@@ -260,7 +259,7 @@ func (r *Router) attendance(w http.ResponseWriter, req *http.Request) {
 }
 
 func getLastAttendanceTime(db *sql.DB, userId string) (time.Time, error) {
-	row := db.QueryRow("SELECT COALESCE(last_attended_timestamp, 0) FROM users WHERE idm_id = ?", userId)
+	row := db.QueryRow("SELECT COALESCE(last_attended_timestamp, 0) FROM users WHERE buck_id = ?", userId)
 	var lastAttendanceTimestamp int64
 	err := row.Scan(&lastAttendanceTimestamp)
 	if err != nil {
@@ -314,7 +313,7 @@ func (r *Router) attend(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	_, err = tx.Exec("UPDATE users SET last_attended_timestamp = ?1 WHERE idm_id = ?2", now.Unix(), userId)
+	_, err = tx.Exec("UPDATE users SET last_attended_timestamp = ?1 WHERE buck_id = ?2", now.Unix(), userId)
 	if err != nil {
 		log.Println("Attend: Failed to set last attended timestamp:", err)
 		http.Error(w, "Failed to set last attended timestamp", http.StatusInternalServerError)
@@ -380,9 +379,9 @@ func (r *Router) InjectJwtMiddleware(handler http.Handler) http.Handler {
 			return
 		}
 
-		idm_id := claims["idm_id"].(string)
+		buck_id := claims["buck_id"]
 
-		req = req.WithContext(context.WithValue(req.Context(), CONTEXT_USER_ID_KEY, idm_id))
+		req = req.WithContext(context.WithValue(req.Context(), CONTEXT_USER_ID_KEY, buck_id))
 		handler.ServeHTTP(w, req)
 	})
 }
@@ -469,6 +468,25 @@ func main() {
 		}
 	}
 
+	authEnvironment := os.Getenv("ENV")
+
+	// seed the database in dev mode
+	if authEnvironment == "" || authEnvironment == "saml" {
+		fileName := "migrations/seed.sql"
+
+		data, err := migrations.ReadFile(fileName)
+		if err != nil {
+			log.Fatalln("Failed to read", fileName, err)
+		}
+
+		sql := string(data)
+
+		_, err = db.Exec(sql)
+		if err != nil {
+			log.Fatalln("Failed to run", fileName, err)
+		}
+	}
+
 	bot := &DiscordBot{
 		Token:         os.Getenv("DISCORD_BOT_TOKEN"),
 		GuildId:       os.Getenv("DISCORD_GUILD_ID"),
@@ -480,7 +498,6 @@ func main() {
 	}
 	bot.Connect()
 
-	authEnvironment := os.Getenv("ENV")
 	var authProvider AuthProvider
 	var rootURL *url.URL
 
@@ -550,6 +567,11 @@ func main() {
 
 	mux.Handle("/", router.InjectJwtMiddleware(http.HandlerFunc(router.index)))
 	mux.Handle("POST /mailchimp", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.SetMailchimp))))
+	mux.Handle("/vote", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.vote))))
+	mux.Handle("POST /vote", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.processVote))))
+	mux.Handle("/admin", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.admin))))
+	mux.Handle("/admin/users", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.adminUsers))))
+	mux.Handle("/admin/vote", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.adminVote))))
 	mux.Handle("/attendance", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.attendance))))
 	mux.Handle("/attend/in-person", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.attend))))
 	mux.Handle("/attend/online", router.InjectJwtMiddleware(router.EnforceJwtMiddleware(http.HandlerFunc(router.attend))))

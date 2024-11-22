@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="title" content="{{ block `title` . }}{{ end }}" />
     <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-    <link href="static/tailwind.css" rel="stylesheet" />
+    <link href="/static/tailwind.css" rel="stylesheet" />
     <title>{{ block "title" . }}{{ end }}</title>
   </head>
   <body class="min-h-screen flex flex-col">

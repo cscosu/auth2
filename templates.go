@@ -3,14 +3,14 @@ package main
 import (
 	"embed"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"net/http"
 	"regexp"
 	"strings"
+	"text/template"
 )
 
-//go:embed templates/*
+//go:embed templates/*.html.tpl
 var templateAssets embed.FS
 
 type TemplateLoader struct {
@@ -26,7 +26,7 @@ type templatePatterns struct {
 
 func newTemplatePatterns() *templatePatterns {
 	return &templatePatterns{
-		extends: regexp.MustCompile(`{{\s*template\s*"([^"]+)"\s*\.?\s*}}`),
+		extends: regexp.MustCompile(`{{\s*template\s*"([^"]+)".*}}`),
 	}
 }
 
